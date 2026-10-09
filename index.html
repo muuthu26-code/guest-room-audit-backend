@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#4f46e5">
+    <!-- Permissive Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Guest Room Audit</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Native App Feel for iOS/Android */
+        body {
+            -webkit-tap-highlight-color: transparent;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+        }
+        
+        button, input, textarea {
+            touch-action: manipulation;
+        }
+
+        /* Hide scrollbars for smooth swiping on mobile */
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Print media query */
+        @media print {
+            body { background-color: white !important; color: black !important; font-size: 11px !important; line-height: 1.3 !important; }
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            .print-border { border: 1px solid #e5e7eb !important; }
+            .print-shadow-none { box-shadow: none !important; }
+            .page-break { page-break-before: always; }
+            .avoid-break { page-break-inside: avoid; }
+            
+            input, textarea { 
+                border: none !important; 
+                background: transparent !important;
+                resize: none !important;
+                padding: 0 !important;
+                min-height: 0 !important;
+            }
+            
+            * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }
+        }
+        
+        /* On-Screen Preview Mode */
+        body.preview-mode { background-color: white !important; color: black !important; }
+        body.preview-mode .no-print { display: none !important; }
+        body.preview-mode .print-only { display: block !important; }
+        body.preview-mode .print-border { border: 1px solid #e5e7eb !important; }
+        body.preview-mode input, body.preview-mode textarea { 
+            border: none !important; 
+            background: transparent !important;
+            resize: none !important;
+            padding: 0 !important;
+            pointer-events: none;
+        }
+        body.preview-mode #exit-preview-btn { display: flex !important; }
+
+        /* Status Toggles */
+        .status-btn.selected-yes { background-color: #10b981; color: white; border-color: #10b981; }
+        .status-btn.selected-no { background-color: #ef4444; color: white; border-color: #ef4444; }
+        .status-btn.selected-na { background-color: #64748b; color: white; border-color: #64748b; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen">
+
+    <!-- Exit Preview Floating Button -->
+    <button id="exit-preview-btn" onclick="app.togglePreview()" class="fixed bottom-8 right-8 bg-slate-800 hover:bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl font-bold z-50 transition-transform hover:scale-105 hidden items-center gap-2">
+        <i class="fa-solid fa-eye-slash"></i> Exit Preview
+    </button>
+
+    <!-- Dashboard View -->
+    <div id="dashboard-view" class="max-w-5xl mx-auto p-4 sm:p-6 transition-opacity duration-300">
+        <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-10 mt-4 sm:mt-6 gap-4">
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 flex items-center gap-3">
+                    <i class="fa-solid fa-bed text-indigo-600"></i>
+                    Guest Room Audit
+                </h1>
+                <p class="text-sm sm:text-base text-slate-500 mt-1">Manage and file your housekeeping room inspections.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <button onclick="app.showTrash()" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2.5 rounded-lg font-medium flex-1 sm:flex-none justify-center flex items-center gap-2 transition-colors shadow-sm">
+                    <i class="fa-solid fa-trash-can"></i> Trash
+                </button>
+                <button onclick="window.location.reload()" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg font-medium flex-1 sm:flex-none justify-center flex items-center gap-2 transition-colors shadow-sm">
+                    <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                </button>
+                <button onclick="app.createNewReport()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg font-medium flex-1 sm:flex-none justify-center flex items-center gap-2 transition-colors shadow-sm">
+                    <i class="fa-solid fa-plus"></i> New Room Audit
+                </button>
+            </div>
+        </header>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-6 border-b border-slate-200 bg-slate-50/50">
+                <h2 class="text-lg font-semibold text-slate-800">Recent Audits</h2>
+            </div>
+            
+            <div id="empty-state" class="p-12 text-center text-slate-500 flex flex-col items-center hidden">
+                <i class="fa-solid fa-clipboard-check text-5xl text-slate-300 mb-4"></i>
+                <p class="text-lg">No room audits filed yet.</p>
+                <p class="text-sm mt-1">Click "New Room Audit" to start an inspection.</p>
+            </div>
+
+            <ul id="report-list" class="divide-y divide-slate-100">
+                <!-- Reports injected via JS -->
+            </ul>
+        </div>
+    </div>
+
+    <!-- Trash View -->
+    <div id="trash-view" class="max-w-5xl mx-auto p-4 sm:p-6 transition-opacity duration-300 hidden">
+        <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-10 mt-4 sm:mt-6 gap-4">
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 flex items-center gap-3">
+                    <i class="fa-solid fa-trash-can text-slate-500"></i>
+                    Trash
+                </h1>
+                <p class="text-sm sm:text-base text-slate-500 mt-1">Items are automatically deleted after 30 days.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <button onclick="app.showDashboard()" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg font-medium flex-1 sm:flex-none justify-center flex items-center gap-2 transition-colors shadow-sm">
+                    <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+                </button>
+            </div>
+        </header>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div id="trash-empty-state" class="p-12 text-center text-slate-500 flex flex-col items-center hidden">
+                <i class="fa-solid fa-wind text-5xl text-slate-300 mb-4"></i>
+                <p class="text-lg">Trash is empty.</p>
+            </div>
+
+            <ul id="trash-list" class="divide-y divide-slate-100">
+                <!-- Trashed Reports injected via JS -->
+            </ul>
+        </div>
+    </div>
+
+    <!-- Editor View -->
+    <div id="editor-view" class="max-w-5xl mx-auto p-3 sm:p-6 hidden print:p-0 print:max-w-none print:block">
+        
+        <!-- Top Action Bar -->
+        <div class="no-print flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-slate-200 sticky top-0 z-50 gap-3">
+            <div class="flex justify-between w-full sm:w-auto items-center">
+                <button onclick="app.showDashboard()" class="text-slate-600 hover:text-slate-900 flex items-center gap-2 font-medium transition-colors text-sm sm:text-base">
+                    <i class="fa-solid fa-arrow-left"></i> Back
+                </button>
+                <span id="save-status-mobile" class="text-xs text-slate-400 sm:hidden">Saving...</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <span id="save-status" class="hidden sm:inline text-sm text-slate-400 mr-2">Saved to Database</span>
+                <button onclick="app.refreshReport()" class="bg-slate-100 hover:bg-slate-200 text-slate-800 p-2 sm:px-4 sm:py-2 rounded-lg font-medium flex items-center justify-center transition-colors" title="Clear form">
+                    <i class="fa-solid fa-trash-can text-slate-500"></i><span class="hidden sm:inline ml-2">Clear</span>
+                </button>
+                <button onclick="app.togglePreview()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-2 sm:px-4 sm:py-2 rounded-lg font-medium flex-1 sm:flex-none flex items-center justify-center gap-2 transition-colors text-sm sm:text-base">
+                    <i class="fa-solid fa-eye"></i> Preview
+                </button>
+                <button onclick="window.print()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg font-medium w-full sm:w-auto flex items-center justify-center gap-2 transition-colors text-sm sm:text-base">
+                    <i class="fa-solid fa-file-pdf"></i> Export PDF
+                </button>
+            </div>
+        </div>
+
+        <!-- Report Header -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-8 mb-6 print-shadow-none print-border print:p-4 print:mb-2">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-6 gap-4 print:mb-2 print:pb-2">
+                <div>
+                    <h2 class="text-xl sm:text-2xl font-bold text-slate-900 print:text-lg">Housekeeping Guest Room Audit</h2>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-2 print:gap-2 print:mb-0">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Room Number</label>
+                    <input type="text" id="meta-roomNo" placeholder="e.g. 401" class="w-full border-b-2 border-slate-200 py-2 focus:outline-none focus:border-indigo-600 transition-colors bg-transparent text-slate-800 font-medium text-base" onchange="app.updateMeta('roomNo', this.value)">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Auditor</label>
+                    <input type="text" id="meta-auditor" placeholder="Auditor Name" class="w-full border-b-2 border-slate-200 py-2 focus:outline-none focus:border-indigo-600 transition-colors bg-transparent text-slate-800 font-medium text-base" onchange="app.updateMeta('auditor', this.value)">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Date</label>
+                    <input type="date" id="meta-date" class="w-full border-b-2 border-slate-200 py-2 focus:outline-none focus:border-indigo-600 transition-colors bg-transparent text-slate-800 font-medium text-base" onchange="app.updateMeta('date', this.value)">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Time</label>
+                    <input type="time" id="meta-time" class="w-full border-b-2 border-slate-200 py-2 focus:outline-none focus:border-indigo-600 transition-colors bg-transparent text-slate-800 font-medium text-base" onchange="app.updateMeta('time', this.value)">
+                </div>
+            </div>
+        </div>
+
+        <!-- Checklist -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print-shadow-none print-border mb-6">
+            <div id="checklist-container" class="divide-y divide-slate-100">
+                <!-- Items Injected -->
+            </div>
+        </div>
+
+        <!-- Final Observations -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-8 mb-6 print-shadow-none print-border avoid-break print:p-4 print:mb-2">
+            <div class="flex justify-between items-center mb-3 print:mb-1">
+                <label class="block text-lg font-bold text-slate-900 print:text-base">Overall Remarks & Maintenance Issues</label>
+                <button onclick="app.triggerGeneralPhotoUpload()" class="no-print bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 px-3 rounded text-sm font-medium flex items-center justify-center gap-1.5 transition-colors border border-slate-200">
+                    <i class="fa-solid fa-camera"></i> Attach Photos
+                </button>
+            </div>
+            <textarea id="meta-observation" rows="5" placeholder="Summarize findings or log maintenance requests..." class="w-full border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all text-base text-slate-800 print:hidden" onchange="app.updateMeta('observation', this.value)" oninput="document.getElementById('print-meta-observation').textContent = this.value"></textarea>
+            
+            <div id="print-meta-observation" class="hidden print:block w-full text-base text-slate-800 whitespace-pre-wrap min-h-[100px] print:text-[10px] print:min-h-[30px] print:leading-tight"></div>
+            
+            <div id="general-photos-container" class="mt-4 flex gap-3 overflow-x-auto pb-2 hide-scrollbar touch-pan-x empty:hidden print:mt-2"></div>
+        </div>
+
+        <!-- Hidden Global Observation Photo Input -->
+        <input type="file" id="general-photo-upload" accept="image/*" capture="environment" multiple class="hidden" onchange="app.handleGeneralPhotoUpload(event)">
+        <!-- Hidden Item-specific Photo Input -->
+        <input type="file" id="item-photo-upload" accept="image/*" capture="environment" multiple class="hidden">
+
+    </div>
+
+    <script>
+        function escapeHTML(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>'"]/g, tag => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                "'": '&#39;',
+                '"': '&quot;'
+            }[tag]));
+        }
+
+        const AUDIT_QUESTIONS = [
+            // Door & Entrance
+            { cat: "Door & Entrance", text: "Room door exterior clean and free of marks/dust." },
+            { cat: "Door & Entrance", text: "Electronic lock functioning correctly, green light indicates properly." },
+            { cat: "Door & Entrance", text: "Peephole is clean and unobstructed." },
+            { cat: "Door & Entrance", text: "DND/Make up Room signs are available and clean." },
+            { cat: "Door & Entrance", text: "Evacuation map securely posted behind the door." },
+
+            // Bedroom Area
+            { cat: "Bedroom Area", text: "Carpet vacuumed, free of stains, debris, and odor." },
+            { cat: "Bedroom Area", text: "Bed neatly made with correct folding standards." },
+            { cat: "Bedroom Area", text: "Bed linens are completely clean, crisp, and free from any stains or tears." },
+            { cat: "Bedroom Area", text: "Pillows are fluffed and arranged neatly." },
+            { cat: "Bedroom Area", text: "Under the bed is completely clear of dust, debris, and previous guest items." },
+            { cat: "Bedroom Area", text: "Windows and window sills are clean, no smudges or dust." },
+            { cat: "Bedroom Area", text: "Curtains/Sheers operate smoothly, are hung correctly, and free of stains." },
+
+            // Furniture & Fixtures
+            { cat: "Furniture & Fixtures", text: "All surfaces (desks, nightstands, tables) are dusted and polished." },
+            { cat: "Furniture & Fixtures", text: "Drawers are clean inside, empty." },
+            { cat: "Furniture & Fixtures", text: "TV screen is clean, no smudges. TV is functioning." },
+            { cat: "Furniture & Fixtures", text: "TV remote control is clean, sanitized, and functioning." },
+            { cat: "Furniture & Fixtures", text: "Tata Sky set-top box and remote included, with all channels active" },
+            { cat: "Furniture & Fixtures", text: "All lamps and light fixtures functioning, bulbs working, shades straight/dust-free." },
+            { cat: "Furniture & Fixtures", text: "Telephone is clean, functioning, and correctly positioned." },
+            { cat: "Furniture & Fixtures", text: "AC/Thermostat is working and set to the standard temperature." },
+            { cat: "Furniture & Fixtures", text: "Power sockets & functional USB points—All electrical sockets, USB/charging points, and switches are functional" },
+
+            // Minibar & Wardrobe
+            { cat: "Wardrobe & Amenities", text: "Wardrobe interior is dusted and clean." },
+            { cat: "Wardrobe & Amenities", text: "Correct number of hangers provided and neatly arranged." },
+            { cat: "Wardrobe & Amenities", text: "Iron and ironing board are clean and available." },
+            { cat: "Wardrobe & Amenities", text: "Electronic safe is open, clean, and functioning." },
+            { cat: "Wardrobe & Amenities", text: "Minibar/Fridge is clean, odor-free, and correctly stocked (if applicable)." },
+            { cat: "Wardrobe & Amenities", text: "Kettle/Coffee maker clean inside and out. Cups and glassware spotless." },
+            { cat: "Wardrobe & Amenities", text: "Complimentary water and tea/coffee supplies correctly stocked." },
+
+            // Bathroom
+            { cat: "Bathroom", text: "Bathroom door, hinges, and hooks are clean." },
+            { cat: "Bathroom", text: "Mirror is perfectly clean, no streaks or spots." },
+            { cat: "Bathroom", text: "Sink, faucet, and countertop are dry, polished, and free of watermarks." },
+            { cat: "Bathroom", text: "Towels are clean, unstained, and folded according to standards." },
+            { cat: "Bathroom", text: "Correct number of standard bath amenities (soap, shampoo, lotion) provided." },
+            { cat: "Bathroom", text: "Toilet bowl is sparkling clean inside and out. Seat is clean and secured." },
+            { cat: "Bathroom", text: "Toilet paper roll is adequately stocked and folded." },
+            { cat: "Bathroom", text: "Shower area/Bathtub is completely free of soap scum, hair, and mold." },
+            { cat: "Bathroom", text: "Showerhead is clean and functioning, no limescale buildup." },
+            { cat: "Bathroom", text: "Bathroom floor is clean, dry, and free of hair/debris, including corners." },
+            { cat: "Bathroom", text: "Exhaust fan is functioning and cover is dust-free." },
+            { cat: "Bathroom", text: "Hairdryer is clean, functioning, and properly stored." },
+            { cat: "Bathroom", text: "Water Supply and Pressure—Hot/cold water supply, shower pressure, and water temperature are satisfactory." },
+            { cat: "Bathroom", text: "Toilet & plumbing—WC flushes properly; no leakage, blockage, unusual noise, or plumbing issues" },
+            { cat: "Bathroom", text: "Wash Basin & Drainage - Taps, water flow, hot/cold mixing, and drainage are functioning properly; no leakage." },
+            { cat: "Bathroom", text: "No water leaking or spilling out of the shower cubicle onto the main bathroom floor." },
+            { cat: "Bathroom", text: "Water drains efficiently inside the shower cubicle with no pooling or slow drainage." },
+
+            // General Impression
+            { cat: "General Impression", text: "Room has a fresh, neutral, and welcoming scent (no foul odors)." },
+            { cat: "General Impression", text: "Trash bins are empty, clean inside and out, with fresh liners." },
+
+            // Overnight Observation
+            { cat: "Overnight Observation", text: "Check for unusual sounds, vibration, odor, temperature fluctuations or any issues noticed during the overnight stay" },
+
+            // Wifi
+            { cat: "Wifi", text: "The wifi connects properly and provides stable connectivity within the room" }
+        ];
+
+        const API_BASE = 'http://127.0.0.1:8000/api';
+
+        const app = {
+            reports: [],
+            currentReportId: null,
+
+            async init() {
+                await this.fetchReports();
+            },
+
+            async fetchReports() {
+                try {
+                    const response = await fetch(`${API_BASE}/audits`);
+                    const data = await response.json();
+                    this.reports = data;
+                    this.renderDashboard();
+                } catch (e) {
+                    console.error("Failed to connect to Python backend server:", e);
+                }
+            },
+
+            async fetchTrash() {
+                try {
+                    const response = await fetch(`${API_BASE}/audits/trash`);
+                    const data = await response.json();
+                    this.reports = data;
+                    this.renderTrash();
+                } catch (e) {
+                    console.error("Failed to fetch trash:", e);
+                }
+            },
+
+            async saveToLocal() {
+                const report = this.getCurrentReport();
+                if (!report) return;
+
+                try {
+                    await fetch(`${API_BASE}/audits`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(report)
+                    });
+                    const statusIndicator = document.getElementById('save-status');
+                    if (statusIndicator) statusIndicator.textContent = "Saved to Database";
+                } catch (e) {
+                    console.error("Failed to save report to backend:", e);
+                }
+            },
+
+            showDashboard() {
+                document.body.classList.remove('preview-mode');
+                document.getElementById('trash-view').classList.add('hidden');
+                document.getElementById('editor-view').classList.add('hidden');
+                document.getElementById('dashboard-view').classList.remove('hidden');
+                this.currentReportId = null;
+                this.fetchReports();
+            },
+
+            showTrash() {
+                document.body.classList.remove('preview-mode');
+                document.getElementById('dashboard-view').classList.add('hidden');
+                document.getElementById('editor-view').classList.add('hidden');
+                document.getElementById('trash-view').classList.remove('hidden');
+                this.currentReportId = null;
+                this.fetchTrash();
+            },
+
+            showEditor() {
+                document.getElementById('dashboard-view').classList.add('hidden');
+                document.getElementById('trash-view').classList.add('hidden');
+                document.getElementById('editor-view').classList.remove('hidden');
+            },
+
+            togglePreview()

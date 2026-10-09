@@ -92,7 +92,7 @@
                 <button onclick="app.showTrash()" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2.5 rounded-lg font-medium flex-1 sm:flex-none justify-center flex items-center gap-2 transition-colors shadow-sm">
                     <i class="fa-solid fa-trash-can"></i> Trash
                 </button>
-                <button onclick="window.location.reload()" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg font-medium flex-1 sm:flex-none justify-center flex items-center gap-2 transition-colors shadow-sm">
+                <button onclick="app.fetchReports()" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg font-medium flex-1 sm:flex-none justify-center flex items-center gap-2 transition-colors shadow-sm">
                     <i class="fa-solid fa-arrows-rotate"></i> Refresh
                 </button>
                 <button onclick="app.createNewReport()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg font-medium flex-1 sm:flex-none justify-center flex items-center gap-2 transition-colors shadow-sm">
@@ -166,7 +166,7 @@
                 <button onclick="app.togglePreview()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-2 sm:px-4 sm:py-2 rounded-lg font-medium flex-1 sm:flex-none flex items-center justify-center gap-2 transition-colors text-sm sm:text-base">
                     <i class="fa-solid fa-eye"></i> Preview
                 </button>
-                <button onclick="window.print()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg font-medium w-full sm:w-auto flex items-center justify-center gap-2 transition-colors text-sm sm:text-base">
+                <button onclick="app.exportPDF()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg font-medium w-full sm:w-auto flex items-center justify-center gap-2 transition-colors text-sm sm:text-base">
                     <i class="fa-solid fa-file-pdf"></i> Export PDF
                 </button>
             </div>
@@ -308,11 +308,14 @@
             { cat: "Wifi", text: "The wifi connects properly and provides stable connectivity within the room" }
         ];
 
-        const API_BASE = 'http://127.0.0.1:8000/api';
+        // Production Railway API URL
+        const API_BASE = 'https://guest-room-audit-backend-production.up.railway.app/api';
 
         const app = {
             reports: [],
+            currentReport: null,
             currentReportId: null,
+            activePhotoIndex: null,
 
             async init() {
                 await this.fetchReports();
@@ -321,39 +324,319 @@
             async fetchReports() {
                 try {
                     const response = await fetch(`${API_BASE}/audits`);
-                    const data = await response.json();
-                    this.reports = data;
-                    this.renderDashboard();
+                    if (response.ok) {
+                        this.reports = await response.json();
+                        this.renderDashboard();
+                    }
                 } catch (e) {
-                    console.error("Failed to connect to Python backend server:", e);
+                    console.error("Failed to connect to Railway backend server:", e);
                 }
             },
 
             async fetchTrash() {
                 try {
                     const response = await fetch(`${API_BASE}/audits/trash`);
-                    const data = await response.json();
-                    this.reports = data;
-                    this.renderTrash();
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.renderTrashList(data);
+                    }
                 } catch (e) {
                     console.error("Failed to fetch trash:", e);
                 }
             },
 
-            async saveToLocal() {
-                const report = this.getCurrentReport();
-                if (!report) return;
+            async saveToBackend() {
+                if (!this.currentReport) return;
+
+                const statusIndicator = document.getElementById('save-status');
+                const statusMobile = document.getElementById('save-status-mobile');
+                if (statusIndicator) statusIndicator.textContent = "Saving...";
+                if (statusMobile) statusMobile.textContent = "Saving...";
 
                 try {
-                    await fetch(`${API_BASE}/audits`, {
+                    const response = await fetch(`${API_BASE}/audits`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(report)
+                        body: JSON.stringify(this.currentReport)
                     });
-                    const statusIndicator = document.getElementById('save-status');
-                    if (statusIndicator) statusIndicator.textContent = "Saved to Database";
+
+                    if (response.ok) {
+                        const savedData = await response.json();
+                        if (savedData.id) this.currentReport.id = savedData.id;
+                        if (statusIndicator) statusIndicator.textContent = "Saved to Database";
+                        if (statusMobile) statusMobile.textContent = "Saved";
+                    }
                 } catch (e) {
                     console.error("Failed to save report to backend:", e);
+                    if (statusIndicator) statusIndicator.textContent = "Error saving";
+                    if (statusMobile) statusMobile.textContent = "Error";
+                }
+            },
+
+            renderDashboard() {
+                const list = document.getElementById('report-list');
+                const emptyState = document.getElementById('empty-state');
+                list.innerHTML = '';
+
+                if (!this.reports || this.reports.length === 0) {
+                    emptyState.classList.remove('hidden');
+                    return;
+                }
+
+                emptyState.classList.add('hidden');
+                this.reports.forEach(report => {
+                    const meta = report.meta_data || report.meta || {};
+                    const li = document.createElement('li');
+                    li.className = 'p-4 sm:p-5 hover:bg-slate-50 flex items-center justify-between cursor-pointer transition-colors';
+                    li.onclick = () => this.openReport(report.id || report._id);
+                    
+                    li.innerHTML = `
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm">
+                                ${escapeHTML(meta.roomNo || 'N/A')}
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-slate-800">Room ${escapeHTML(meta.roomNo || 'Unassigned')}</h3>
+                                <p class="text-xs sm:text-sm text-slate-500">Auditor: ${escapeHTML(meta.auditor || 'Unknown')} • ${escapeHTML(meta.date || 'No Date')}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button onclick="event.stopPropagation(); app.moveToTrash('${report.id}')" class="text-slate-400 hover:text-red-600 p-2 text-sm transition-colors" title="Move to Trash">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                            <i class="fa-solid fa-chevron-right text-slate-400 text-sm"></i>
+                        </div>
+                    `;
+                    list.appendChild(li);
+                });
+            },
+
+            renderTrashList(trashItems) {
+                const list = document.getElementById('trash-list');
+                const emptyState = document.getElementById('trash-empty-state');
+                list.innerHTML = '';
+
+                if (!trashItems || trashItems.length === 0) {
+                    emptyState.classList.remove('hidden');
+                    return;
+                }
+
+                emptyState.classList.add('hidden');
+                trashItems.forEach(report => {
+                    const meta = report.meta_data || report.meta || {};
+                    const li = document.createElement('li');
+                    li.className = 'p-4 sm:p-5 flex items-center justify-between';
+                    
+                    li.innerHTML = `
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-sm">
+                                ${escapeHTML(meta.roomNo || 'N/A')}
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-slate-800">Room ${escapeHTML(meta.roomNo || 'Unassigned')}</h3>
+                                <p class="text-xs sm:text-sm text-slate-500">Auditor: ${escapeHTML(meta.auditor || 'Unknown')} • ${escapeHTML(meta.date || 'No Date')}</p>
+                            </div>
+                        </div>
+                        <button onclick="app.restoreFromTrash('${report.id}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5">
+                            <i class="fa-solid fa-rotate-left"></i> Restore
+                        </button>
+                    `;
+                    list.appendChild(li);
+                });
+            },
+
+            createNewReport() {
+                const now = new Date();
+                const currentDate = now.toISOString().split('T')[0];
+                const currentTime = now.toTimeString().split(' ')[0].substring(0, 5);
+
+                this.currentReport = {
+                    id: 'audit_' + Date.now(),
+                    meta_data: {
+                        roomNo: '',
+                        auditor: '',
+                        date: currentDate,
+                        time: currentTime,
+                        observation: '',
+                        general_photos: []
+                    },
+                    items: AUDIT_QUESTIONS.map((q, idx) => ({
+                        id: idx,
+                        category: q.cat,
+                        question: q.text,
+                        status: 'YES',
+                        remarks: '',
+                        photos: []
+                    }))
+                };
+
+                this.populateEditor();
+                this.showEditor();
+                this.saveToBackend();
+            },
+
+            async openReport(id) {
+                try {
+                    const response = await fetch(`${API_BASE}/audits/${id}`);
+                    if (response.ok) {
+                        this.currentReport = await response.json();
+                        this.populateEditor();
+                        this.showEditor();
+                    }
+                } catch (e) {
+                    console.error("Failed to load audit:", e);
+                }
+            },
+
+            populateEditor() {
+                if (!this.currentReport) return;
+                const meta = this.currentReport.meta_data || {};
+
+                document.getElementById('meta-roomNo').value = meta.roomNo || '';
+                document.getElementById('meta-auditor').value = meta.auditor || '';
+                document.getElementById('meta-date').value = meta.date || '';
+                document.getElementById('meta-time').value = meta.time || '';
+                document.getElementById('meta-observation').value = meta.observation || '';
+                document.getElementById('print-meta-observation').textContent = meta.observation || '';
+
+                this.renderChecklist();
+                this.renderGeneralPhotos();
+            },
+
+            renderChecklist() {
+                const container = document.getElementById('checklist-container');
+                container.innerHTML = '';
+
+                let currentCat = '';
+                this.currentReport.items.forEach((item, index) => {
+                    if (item.category !== currentCat) {
+                        currentCat = item.category;
+                        const header = document.createElement('div');
+                        header.className = 'bg-slate-100/80 px-4 py-2.5 font-bold text-xs uppercase tracking-wider text-slate-600 print:bg-slate-200';
+                        header.textContent = currentCat;
+                        container.appendChild(header);
+                    }
+
+                    const row = document.createElement('div');
+                    row.className = 'p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/50 transition-colors print:p-2';
+                    row.innerHTML = `
+                        <div class="flex-1">
+                            <p class="text-sm font-medium text-slate-800">${escapeHTML(item.question)}</p>
+                            <input type="text" placeholder="Add remark..." value="${escapeHTML(item.remarks || '')}" 
+                                class="mt-1 text-xs text-slate-600 w-full border-b border-slate-200 focus:outline-none focus:border-indigo-600 bg-transparent print:border-none"
+                                onchange="app.setItemRemarks(${index}, this.value)">
+                        </div>
+                        <div class="flex items-center gap-2 no-print">
+                            <button onclick="app.setItemStatus(${index}, 'YES')" class="status-btn text-xs font-semibold px-3 py-1.5 rounded-md border border-slate-200 ${item.status === 'YES' ? 'selected-yes' : 'bg-white text-slate-600'}">YES</button>
+                            <button onclick="app.setItemStatus(${index}, 'NO')" class="status-btn text-xs font-semibold px-3 py-1.5 rounded-md border border-slate-200 ${item.status === 'NO' ? 'selected-no' : 'bg-white text-slate-600'}">NO</button>
+                            <button onclick="app.setItemStatus(${index}, 'N/A')" class="status-btn text-xs font-semibold px-3 py-1.5 rounded-md border border-slate-200 ${item.status === 'N/A' ? 'selected-na' : 'bg-white text-slate-600'}">N/A</button>
+                        </div>
+                    `;
+                    container.appendChild(row);
+                });
+            },
+
+            setItemStatus(index, status) {
+                if (this.currentReport && this.currentReport.items[index]) {
+                    this.currentReport.items[index].status = status;
+                    this.renderChecklist();
+                    this.saveToBackend();
+                }
+            },
+
+            setItemRemarks(index, remarks) {
+                if (this.currentReport && this.currentReport.items[index]) {
+                    this.currentReport.items[index].remarks = remarks;
+                    this.saveToBackend();
+                }
+            },
+
+            updateMeta(key, value) {
+                if (this.currentReport) {
+                    if (!this.currentReport.meta_data) this.currentReport.meta_data = {};
+                    this.currentReport.meta_data[key] = value;
+                    this.saveToBackend();
+                }
+            },
+
+            triggerGeneralPhotoUpload() {
+                document.getElementById('general-photo-upload').click();
+            },
+
+            handleGeneralPhotoUpload(event) {
+                const files = event.target.files;
+                if (!files || files.length === 0) return;
+
+                if (!this.currentReport.meta_data.general_photos) {
+                    this.currentReport.meta_data.general_photos = [];
+                }
+
+                Array.from(files).forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        this.currentReport.meta_data.general_photos.push(e.target.result);
+                        this.renderGeneralPhotos();
+                        this.saveToBackend();
+                    };
+                    reader.readAsDataURL(file);
+                });
+            },
+
+            renderGeneralPhotos() {
+                const container = document.getElementById('general-photos-container');
+                container.innerHTML = '';
+                const photos = this.currentReport?.meta_data?.general_photos || [];
+
+                photos.forEach((photoSrc, idx) => {
+                    const div = document.createElement('div');
+                    div.className = 'relative w-20 h-20 rounded-lg overflow-hidden border border-slate-200 flex-shrink-0';
+                    div.innerHTML = `
+                        <img src="${photoSrc}" class="w-full h-full object-cover">
+                        <button onclick="app.removeGeneralPhoto(${idx})" class="no-print absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-md">
+                            &times;
+                        </button>
+                    `;
+                    container.appendChild(div);
+                });
+            },
+
+            removeGeneralPhoto(idx) {
+                if (this.currentReport?.meta_data?.general_photos) {
+                    this.currentReport.meta_data.general_photos.splice(idx, 1);
+                    this.renderGeneralPhotos();
+                    this.saveToBackend();
+                }
+            },
+
+            refreshReport() {
+                if (confirm("Are you sure you want to clear this report?")) {
+                    this.createNewReport();
+                }
+            },
+
+            exportPDF() {
+                if (this.currentReport && this.currentReport.id) {
+                    window.open(`${API_BASE}/audits/${this.currentReport.id}/pdf`, '_blank');
+                } else {
+                    window.print();
+                }
+            },
+
+            async moveToTrash(id) {
+                try {
+                    await fetch(`${API_BASE}/audits/${id}/trash`, { method: 'DELETE' });
+                    this.fetchReports();
+                } catch (e) {
+                    console.error("Failed to trash report:", e);
+                }
+            },
+
+            async restoreFromTrash(id) {
+                try {
+                    await fetch(`${API_BASE}/audits/${id}/restore`, { method: 'POST' });
+                    this.fetchTrash();
+                } catch (e) {
+                    console.error("Failed to restore report:", e);
                 }
             },
 
@@ -362,7 +645,7 @@
                 document.getElementById('trash-view').classList.add('hidden');
                 document.getElementById('editor-view').classList.add('hidden');
                 document.getElementById('dashboard-view').classList.remove('hidden');
-                this.currentReportId = null;
+                this.currentReport = null;
                 this.fetchReports();
             },
 
@@ -371,7 +654,7 @@
                 document.getElementById('dashboard-view').classList.add('hidden');
                 document.getElementById('editor-view').classList.add('hidden');
                 document.getElementById('trash-view').classList.remove('hidden');
-                this.currentReportId = null;
+                this.currentReport = null;
                 this.fetchTrash();
             },
 
@@ -381,4 +664,12 @@
                 document.getElementById('editor-view').classList.remove('hidden');
             },
 
-            togglePreview()
+            togglePreview() {
+                document.body.classList.toggle('preview-mode');
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => app.init());
+    </script>
+</body>
+</html>
